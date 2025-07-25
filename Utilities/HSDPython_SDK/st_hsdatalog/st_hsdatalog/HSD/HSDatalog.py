@@ -413,8 +413,8 @@ class HSDatalog:
                 odr = component.sensor_status.sub_sensor_status[ss_id].odr
                 HSDatalog.__convert_to_xsv(hsd, s_name, ss_type, odr, start_time, end_time, labeled, raw_data, output_folder, file_format)
                 
-    @staticmethod
-    def __convert_to_txt_by_tags(hsd, comp_name, comp_type, is_active, start_time, end_time, ignore_datalog_tags, acq_folder, output_folder, out_format, hsd_dfs, which_tags):
+   @staticmethod
+def __convert_to_txt_by_tags(hsd, comp_name, comp_type, is_active, start_time, end_time, ignore_datalog_tags, acq_folder, output_folder, out_format, hsd_dfs, which_tags, name_suffix=""):
         data_tags = None
         if comp_type != 'MLC' and comp_type != 'STREDL' and is_active:
             df = hsd.get_dataframe(comp_name, comp_type, start_time, end_time, labeled = not ignore_datalog_tags)
@@ -426,29 +426,47 @@ class HSDatalog:
                 # ignore_datalog_tags = False
             if not (df is None or df.empty):
                 hsd_dfs.append(df)
-        HSDatalogConverter.to_txt_by_tags(output_folder, comp_name + "_" + os.path.basename(acq_folder), hsd_dfs, data_tags, out_format, mode = 'w')
+       file_base = f"{comp_name}_{os.path.basename(acq_folder)}{name_suffix}"
+        HSDatalogConverter.to_txt_by_tags(output_folder, file_base, hsd_dfs, data_tags, out_format, mode='w')
         log.info("--> {} ST format conversion completed successfully".format(comp_name))
 
     @staticmethod
     def convert_dat_to_txt_by_tags(hsd, component, start_time, end_time, ignore_datalog_tags, acq_folder, output_folder, out_format, which_tags = None):
-        hsd_dfs = []
-        if isinstance(hsd, HSDatalog_v2):
-            c_name = list(component.keys())[0]
-            enable = None
-            if "enable" in component[c_name]:
-                enable = component[c_name]["enable"] #TODO check this
-                HSDatalog.__convert_to_txt_by_tags(hsd, c_name, None, enable, start_time, end_time, ignore_datalog_tags, acq_folder, output_folder, out_format, hsd_dfs, which_tags)
-            else:
-                if enable is None:
-                    log.exception("Missing \"enable\" Properties in your device status")
-                raise    
+    hsd_dfs = []
+
+    # Read "Name" from AcquisitionInfo.json
+    import json
+    name_suffix = ""
+    acq_info_path = os.path.join(acq_folder, "AcquisitionInfo.json")
+    if os.path.exists(acq_info_path):
+        with open(acq_info_path, "r") as f:
+            acq_info = json.load(f)
+            name_suffix = f"_{acq_info.get('Name', 'NoName')}"
+
+    if isinstance(hsd, HSDatalog_v2):
+        c_name = list(component.keys())[0]
+        enable = component[c_name].get("enable")
+        if enable is not None:
+            HSDatalog.__convert_to_txt_by_tags(
+                hsd, c_name, None, enable,
+                start_time, end_time, ignore_datalog_tags,
+                acq_folder, output_folder, out_format,
+                hsd_dfs, which_tags, name_suffix
+            )
         else:
-            s_name = component.name
-            for ss_id, ss_desc in enumerate(component.sensor_descriptor.sub_sensor_descriptor):
-                ss_type = ss_desc.sensor_type
-                is_active = component.sensor_status.sub_sensor_status[ss_id].is_active
-                HSDatalog.__convert_to_txt_by_tags(hsd, s_name, ss_type, is_active, start_time, end_time, ignore_datalog_tags, acq_folder, output_folder, out_format, hsd_dfs, which_tags)
-    
+            log.exception("Missing \"enable\" Properties in your device status")
+            raise
+    else:
+        s_name = component.name
+        for ss_id, ss_desc in enumerate(component.sensor_descriptor.sub_sensor_descriptor):
+            ss_type = ss_desc.sensor_type
+            is_active = component.sensor_status.sub_sensor_status[ss_id].is_active
+            HSDatalog.__convert_to_txt_by_tags(
+                hsd, s_name, ss_type, is_active,
+                start_time, end_time, ignore_datalog_tags,
+                acq_folder, output_folder, out_format,
+                hsd_dfs, which_tags, name_suffix
+            )
     @staticmethod
     def __convert_to_nanoedge_format(hsd, comp_name, comp_type, odr, signal_length, signal_increment, start_time, end_time, raw_data, output_folder):
         chunk_size = 10000000 #feel fre to change it
